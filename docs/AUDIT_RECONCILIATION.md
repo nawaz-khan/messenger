@@ -277,3 +277,65 @@ rather than a code change.)
 
 No secrets were read, printed, or committed during this reconciliation.
 
+
+---
+
+## Fix log — P0-2 (refresh-token exposure)
+
+**Status: FIXED (code + docs). Runtime verification of the live OAuth exchange is
+still pending real credentials.**
+
+### What was wrong
+
+`src/app/api/media/google/callback/route.ts` exchanged the OAuth authorization code
+and rendered `tokens.refresh_token` directly into an HTML page so the developer could
+copy it into `.env.local`. That exposed a long-lived credential to the browser (history,
+screenshots, shared tabs). `tokens.access_token` was available on the same object.
+
+### Changes made
+
+| File | Change |
+|------|--------|
+| `src/app/api/media/google/callback/route.ts` | No longer renders, serializes, or returns any token. Returns a generic success/failure page. In development it persists the refresh token to the git-ignored `.env.local` (updating only the `GOOGLE_OAUTH_REFRESH_TOKEN` line, preserving all other content, file mode `0600`). Browser/JSON errors are generic; the server logs a generic message only (never token values). Route returns `404` when `NODE_ENV === 'production'`. |
+| `src/app/api/media/google/authorize/route.ts` | Gated to non-production (`404` in production). Configuration errors return a generic message instead of echoing `error.message`. OAuth flow itself unchanged. |
+| `src/app/api/media/google/status/route.ts` | Gated to non-production (`404` in production). Raw provider error text is no longer surfaced to the client. |
+| `docs/GOOGLE_DRIVE_SETUP.md` | §8 updated: the callback no longer displays the token; it writes it to `.env.local` automatically. Documents that the bootstrap routes are development-only. |
+| `tests/oauth-token-exposure.test.mjs` | New dependency-free regression test (`node:test`) asserting the three routes never interpolate/concatenate `tokens.refresh_token`/`tokens.access_token` and are gated to non-production. |
+| `package.json` | Added `"test": "node --test tests/*.test.mjs"`. |
+
+### Constraints honored
+
+- **OAuth flow preserved** — no switch to service accounts; `getOAuth2Client()` and the
+  `drive.file` scope are unchanged.
+- **Storage mechanism preserved** — the refresh token still ends up in the documented
+  `GOOGLE_OAUTH_REFRESH_TOKEN` environment variable (now written automatically instead of
+  copied from a web page).
+- **No tokens logged, returned, or committed.** No unrelated functionality changed.
+
+### Verification performed
+
+- `npm test` → **3/3 pass** (Node's built-in runner; no third-party test framework exists
+  in this project, so none was added).
+- `next lint` → **pass**, 0 warnings / 0 errors.
+- `tsc --noEmit` → **8 pre-existing, unrelated errors**, all `TS7016` for a missing
+  `lucide-react` type declaration in files this change did not touch. **Zero errors in the
+  changed files.**
+- `next build` → **could not be verified in this sandbox.** `next build` exited `0` after
+  printing only "Creating an optimized production build …" and produced no `.next/BUILD_ID`
+  or server output, i.e. the build did not actually complete. This is an environment issue
+  (dependency install via a mirror registry; `next@14.2.3` also emitted a deprecation warning
+  about a known vulnerability). **No successful production build is claimed.**
+
+### Git-history secret scan
+
+- No real credentials are present in Git history. The only matches for private-key/token
+  patterns are intentional **placeholders** in `.env.example` and `docs/GOOGLE_DRIVE_SETUP.md`
+  (e.g. `-----BEGIN PRIVATE KEY-----\n...`). `.env.example` is the only env file ever tracked;
+  `.env` / `.env.*` are git-ignored. No secret values were printed during this scan.
+
+### Remaining runtime verification
+
+1. With real credentials, run the documented dev flow end-to-end and confirm the token is
+   written to `.env.local` and never appears in the browser.
+2. Confirm production returns `404` for the three bootstrap routes.
+

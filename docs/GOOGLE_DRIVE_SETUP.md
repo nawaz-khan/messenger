@@ -53,8 +53,18 @@ To connect the application to your Google Drive:
 3. Open a browser and navigate to: `http://localhost:3000/api/media/google/authorize`.
 4. Log in with the Google Account that owns the Google Drive folder.
 5. Grant the application permission to manage Google Drive files.
-6. You will be redirected back to the application. If successful, you will see a screen displaying your `GOOGLE_OAUTH_REFRESH_TOKEN`.
-7. Copy the refresh token, paste it into your `.env.local` file, and restart your development server.
+6. You will be redirected back to the application and shown a generic
+   **"Google Drive Connected"** confirmation page. The refresh token is **not**
+   displayed in the browser. Instead, the callback writes it directly to the
+   single `GOOGLE_OAUTH_REFRESH_TOKEN` line of your local `.env.local` file
+   (all other lines are preserved).
+7. Restart your development server (`npm run dev`) so the new value is loaded.
+
+> These bootstrap routes (`/api/media/google/authorize`, `/api/media/google/callback`,
+> `/api/media/google/status`) are **development-only**. Outside development
+> (`NODE_ENV === 'production'`) they return `404` so that credential bootstrapping
+> can never occur on a production deployment. Production must use a pre-provisioned
+> `GOOGLE_OAUTH_REFRESH_TOKEN` (ideally from a secret manager), never the live callback.
 
 ## 9. How to Verify Credentials (Safely)
 - Navigate to: `http://localhost:3000/api/media/google/status`.
